@@ -1,44 +1,148 @@
 package com.example.guest.today_dobi;
 
-import android.annotation.SuppressLint;
-import android.content.Context;
-import android.media.AudioManager;
-import android.media.MediaPlayer;
-import android.media.audiofx.EnvironmentalReverb;
+import android.os.AsyncTask;
+import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.TextView;
+
+
+import android.app.Activity;
 import android.os.Bundle;
 import android.os.Environment;
-import android.support.v7.app.AppCompatActivity;
+import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
 
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
+import com.example.guest.today_dobi.utils.AudioWriterPCM;
+import com.naver.speech.clientapi.SpeechRecognitionResult;
 
-import static android.os.Build.VERSION_CODES.O;
-import static android.os.Environment.DIRECTORY_DOWNLOADS;
+import java.lang.ref.WeakReference;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
 
 
+    private NaverTTSTask mNaverTTSTask;
+    String[] mTextString;
+
+
+    private static final String TAG = MainActivity.class.getSimpleName();
+    private static final String CLIENT_ID = "AuWjQtbxwiihw6GZ9Xb0"; // "내 애플리케이션"에서 Client ID를 확인해서 이곳에 적어주세요.
+    private RecognitionHandler handler;
+    private NaverRecognizer naverRecognizer;
+    private TextView txtResult;
+    private Button btnStart;
+    private String mResult;
+    private AudioWriterPCM writer;
+
+    private String final_result;
+
+
+
+    private void handleMessage(Message msg) {
+        switch (msg.what) {
+            case R.id.clientReady:
+                // Now an user can speak.
+                txtResult.setText("Connected");
+                writer = new AudioWriterPCM(
+                        Environment.getExternalStorageDirectory().getAbsolutePath() + "/NaverSpeechTest");
+                writer.open("Test");
+                break;
+
+            case R.id.audioRecording:
+                writer.write((short[]) msg.obj);
+                break;
+
+            case R.id.partialResult:
+                // Extract obj property typed with String.
+                mResult = (String) (msg.obj);
+                txtResult.setText(mResult);
+                break;
+
+            case R.id.finalResult:
+                // Extract obj property typed with String array.
+                // The first element is recognition result for speech.
+                SpeechRecognitionResult speechRecognitionResult = (SpeechRecognitionResult) msg.obj;
+                List<String> results = speechRecognitionResult.getResults();
+                StringBuilder strBuf = new StringBuilder();
+                for(String result : results) {
+                    strBuf.append(result);
+                    strBuf.append("\n");
+                }
+                Log.v("개굴", results.get(0));
+                final_result = results.get(0);
+                mResult = strBuf.toString();
+                txtResult.setText(mResult);
+
+//                mResult = (String) (msg.obj);
+//                SpeechRecognitionResult speechRecognitionResult = (SpeechRecognitionResult) msg.obj;
+//                mResult = speechRecognitionResult.getResults();
+//                txtResult.setText(mResult);
+                break;
+
+            case R.id.recognitionError:
+                if (writer != null) {
+                    writer.close();
+                }
+
+                mResult = "Error code : " + msg.obj.toString();
+                txtResult.setText(mResult);
+                btnStart.setText(R.string.str_start);
+                btnStart.setEnabled(true);
+                break;
+
+            case R.id.clientInactive:
+                if (writer != null) {
+                    writer.close();
+                }
+
+                btnStart.setText(R.string.str_start);
+                btnStart.setEnabled(true);
+                break;
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+
+
+        txtResult = (TextView) findViewById(R.id.txt_result);
+        btnStart = (Button) findViewById(R.id.btn_start);
+
+        handler = new RecognitionHandler(this);
+        naverRecognizer = new NaverRecognizer(this, handler, CLIENT_ID);
+
+
+
+        btnStart.setOnClickListener(new View.OnClickListener(){
+
+            @Override
+            public void onClick(View v) {
+                if(!naverRecognizer.getSpeechRecognizer().isRunning()) {
+                    // Start button is pushed when SpeechRecognizer's state is inactive.
+                    // Run SpeechRecongizer by calling recognize().
+                    mResult = "";
+                    txtResult.setText("Connecting...");
+                    btnStart.setText(R.string.str_stop);
+                    naverRecognizer.recognize();
+                } else {
+                    Log.d(TAG, "stop and wait Final Result");
+                    btnStart.setEnabled(false);
+
+                    naverRecognizer.getSpeechRecognizer().stop();
+                }
+            }
+        });
+
 
 
         Button b = findViewById(R.id.button);
@@ -48,80 +152,17 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View v){
 
 
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        String clientId = "W8r9m2AbNrNLoFeyneMx";//애플리케이션 클라이언트 아이디값";
-                        String clientSecret = "nW9REFjRpu";//애플리케이션 클라이언트 시크릿값";
+                String mText;
+                if(mResult.length() != 0){
+                    mText = final_result;
+                    Log.v("로그로그", final_result);
+                }else {
+                    mText = "면접관님들 클라스 오지구욘";
+                }
+                mTextString = new String[]{mText};
 
-                        try {
-                            String text = URLEncoder.encode("면접관님덜 클라스 오지구요.", "UTF-8"); // 13자
-                            String apiURL = "https://openapi.naver.com/v1/voice/tts.bin";
-                            URL url = new URL(apiURL);
-                            HttpURLConnection con = (HttpURLConnection)url.openConnection();
-                            con.setRequestMethod("POST");
-                            con.setRequestProperty("X-Naver-Client-Id", clientId);
-                            con.setRequestProperty("X-Naver-Client-Secret", clientSecret);
-                            // post request
-                            String postParams = "speaker=jinho&speed=0&text=" + text;
-                            con.setDoOutput(true);
-                            DataOutputStream wr = new DataOutputStream(con.getOutputStream());
-                            wr.writeBytes(postParams);
-                            wr.flush();
-                            wr.close();
-                            int responseCode = con.getResponseCode();
-                            BufferedReader br;
-                            if(responseCode==200) { // 정상 호출
-                                InputStream is = con.getInputStream();
-                                int read = 0;
-                                byte[] bytes = new byte[1024];
-                                // 랜덤한 이름으로 mp3 파일 생성
-//
-//                                File dir = new File(android.os.Environment.getExternalStorageDirectory() + "/", "Dobi");
-//                                if(!dir.exists()){
-//                                    dir.mkdirs();
-//                                }
-
-
-                                String tempname = "dobis";
-//                                File f = new File(android.os.Environment.getExternalStorageDirectory() + File.separator + "Dobi/" + tempname + ".mp3");
-//                                File f = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/" + tempname + ".mp3");
-//                                File f = new File(getApplicationContext().getFilesDir().getPath() + "/" + tempname + ".mp3");
-                                File f = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "test.mp3");
-                                f.createNewFile();
-                                OutputStream outputStream = new FileOutputStream(f);
-                                while ((read =is.read(bytes)) != -1) {
-                                    outputStream.write(bytes, 0, read);
-                                }
-
-                                is.close();
-
-
-//                                String Path_to_file = android.os.Environment.getExternalStorageDirectory() + File.separator + "Dobi/" + tempname + ".mp3";
-////                                String Path_to_file = Environment.getExternalStorageDirectory().getAbsolutePath() + "/" + tempname + ".mp3";
-//////                                String Path_to_file = getApplicationContext().getFilesDir().getPath() + "/" + tempname + ".mp3";
-//                                MediaPlayer audioPlay = new MediaPlayer();
-//                                audioPlay.setDataSource(Path_to_file);
-//                                audioPlay.prepare();
-//                                audioPlay.start();
-
-
-                            } else {  // 에러 발생
-                                br = new BufferedReader(new InputStreamReader(con.getErrorStream()));
-                                String inputLine;
-                                StringBuffer response = new StringBuffer();
-                                while ((inputLine = br.readLine()) != null) {
-                                    response.append(inputLine);
-                                }
-                                br.close();
-                                System.out.println(response.toString());
-                            }
-
-                        } catch (Exception e) {
-                            System.out.println(e);
-                        }
-                    }
-                }).start();
+                mNaverTTSTask = new NaverTTSTask();
+                mNaverTTSTask.execute(mTextString);
 
 
             }
@@ -133,31 +174,89 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
 
-//                String path = getApplicationContext().getFilesDir().getPath();
-//                String path = getApplication().getFilesDir().getPath();
-                String path = Environment.getExternalStorageDirectory().getAbsolutePath();
-                Log.v("external", path);
-
-//                String Path_to_file = Environment.getExternalStorageDirectory().getAbsolutePath() + "/" + "dobis" + ".mp3";
-//                String Path_to_file = android.os.Environment.getExternalStorageDirectory() + File.separator + "Dobi/" + "dobis" + ".mp3";
-
-
-                MediaPlayer mp = new MediaPlayer();
-                try {
-                    mp.setDataSource(String.valueOf(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)) + "/test.mp3");
-                    mp.setAudioStreamType(AudioManager.STREAM_MUSIC);
-                    mp.prepare();
-                    mp.start();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-//                mp.release();
 
             }
         });
 
+
+
+
+        Button csr = findViewById(R.id.cs_btn);
+        csr.setOnClickListener(new View.OnClickListener(){
+
+            @Override
+            public void onClick(View v) {
+
+            }
+
+        });
+
+
+
+
+
     }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // NOTE : initialize() must be called on start time.
+        naverRecognizer.getSpeechRecognizer().initialize();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        mResult = "";
+        txtResult.setText("");
+        btnStart.setText(R.string.str_start);
+        btnStart.setEnabled(true);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // NOTE : release() must be called on stop time.
+        naverRecognizer.getSpeechRecognizer().release();
+    }
+
+    // Declare handler for handling SpeechRecognizer thread's Messages.
+    static class RecognitionHandler extends Handler {
+        private final WeakReference<MainActivity> mActivity;
+
+        RecognitionHandler(MainActivity activity) {
+            mActivity = new WeakReference<MainActivity>(activity);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            MainActivity activity = mActivity.get();
+            if (activity != null) {
+                activity.handleMessage(msg);
+            }
+        }
+    }
+
+    private class NaverTTSTask extends AsyncTask<String[], Void, String> {
+
+        @Override
+        protected String doInBackground(String[]... strings) {
+            //여기서 서버에 요청
+            APIExamTTS.main(mTextString);
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            //방금 받은 파일명의 mp3가 있으면 플레이 시키자. 맞나 여기서 하는거?
+            //아닌가 파일을 만들고 바로 실행되게 해야 하나? AsyncTask 백그라운드 작업중에...?
+
+        }
+    }
+
+
 
 
 
