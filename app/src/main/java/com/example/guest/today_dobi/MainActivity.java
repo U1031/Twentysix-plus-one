@@ -153,12 +153,16 @@ public class MainActivity extends AppCompatActivity {
 
 
                 String mText;
-                if(mResult.length() != 0){
-                    mText = final_result;
-                    Log.v("로그로그", final_result);
-                }else {
-                    mText = "면접관님들 클라스 오지구욘";
-                }
+//                if(mResult.length() != 0){
+//                    mText = final_result;
+//                    Log.v("로그로그", final_result);
+//                }else {
+//                    mText = "면접관님들 클라스 오지구욘";
+//                }
+
+
+                mText = Listing_Logic.main(final_result);
+
                 mTextString = new String[]{mText};
 
                 mNaverTTSTask = new NaverTTSTask();
@@ -174,6 +178,17 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
 
+                String test_message = "나 배달 안시켰는데 자기 혹시 배달 시켰어?";
+
+
+                String mText = Listing_Logic.main(test_message);
+
+
+
+                mTextString = new String[]{mText};
+
+                mNaverTTSTask = new NaverTTSTask();
+                mNaverTTSTask.execute(mTextString);
 
             }
         });
